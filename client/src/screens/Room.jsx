@@ -105,16 +105,17 @@ const Room = () => {
             const stream = await initCamera();
             setIsCallActive(true);
 
-            const offer = await peer.getOffer();
-            socket.emit('user:call', { offer, to: remoteSocketId });
-
-            // Send stream immediately after creating offer
+            // CRITICAL: Add tracks BEFORE creating offer so they're included in SDP
             if (stream) {
                 for (const track of stream.getTracks()) {
                     peer.peer.addTrack(track, stream);
-                    console.log('Track added during call initiation:', track.kind);
+                    console.log('Track added before offer:', track.kind);
                 }
             }
+
+            // Now create offer with tracks included
+            const offer = await peer.getOffer();
+            socket.emit('user:call', { offer, to: remoteSocketId });
         } catch (error) {
             console.error('Error initiating call:', error);
             alert('Error initiating call: ' + error.message);
@@ -131,16 +132,18 @@ const Room = () => {
             peer.reset();
 
             const stream = await initCamera();
-            const answer = await peer.getAnswer(offer);
-            socket.emit('call:accepted', { answer, to: from });
 
-            // Send stream immediately after accepting call
+            // CRITICAL: Add tracks BEFORE creating answer so they're included in SDP
             if (stream) {
                 for (const track of stream.getTracks()) {
                     peer.peer.addTrack(track, stream);
-                    console.log('Track added during call acceptance:', track.kind);
+                    console.log('Track added before answer:', track.kind);
                 }
             }
+
+            // Now create answer with tracks included
+            const answer = await peer.getAnswer(offer);
+            socket.emit('call:accepted', { answer, to: from });
         } catch (error) {
             console.error('Error answering call:', error);
             alert('Error accepting call: ' + error.message);
@@ -191,10 +194,15 @@ const Room = () => {
 
     const handleCallAccepted = useCallback(async (data) => {
         const { answer } = data;
-        await peer.setRemoteDescription(answer);
-        console.log('Call accepted!');
-        sendStream();
-    }, [sendStream]);
+
+        // Only set remote description if we're in the correct state
+        if (peer.peer.signalingState === 'have-local-offer') {
+            await peer.setRemoteDescription(answer);
+            console.log('Call accepted!');
+        } else {
+            console.warn('Cannot set remote description, peer is in state:', peer.peer.signalingState);
+        }
+    }, []);
 
     const handleNegotiationNeeded = useCallback(async () => {
         const offer = await peer.getOffer();
@@ -214,7 +222,13 @@ const Room = () => {
     }, [socket]);
 
     const handleNegotiationFinal = useCallback(async ({ answer }) => {
-        await peer.setRemoteDescription(answer);
+        // Only set remote description if we're in the correct state for renegotiation
+        if (peer.peer.signalingState === 'have-local-offer') {
+            await peer.setRemoteDescription(answer);
+            console.log('Renegotiation completed');
+        } else {
+            console.log('Skipping setRemoteDescription, peer is in state:', peer.peer.signalingState);
+        }
     }, []);
 
     const handleIceCandidate = useCallback(async ({ candidate }) => {
