@@ -45,10 +45,37 @@ const Room = () => {
 
     useEffect(() => {
         return () => {
+            // Cleanup on component unmount
+            console.log('Component unmounting, cleaning up...');
+
+            // Stop local stream
             if (MyStream) {
-                MyStream.getTracks().forEach(track => track.stop());
+                MyStream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log('Stopped track on unmount:', track.kind);
+                });
                 setMyStream(null);
-                console.log('Camera stopped and stream cleared');
+            }
+
+            // Close peer connection if it exists and is not already closed
+            if (peer.peer && peer.peer.signalingState !== 'closed') {
+                // Remove all senders before closing
+                try {
+                    const senders = peer.peer.getSenders();
+                    senders.forEach(sender => {
+                        try {
+                            peer.peer.removeTrack(sender);
+                        } catch (error) {
+                            // Ignore errors during cleanup
+                            console.log('Cleanup error (ignored):', error.message);
+                        }
+                    });
+                } catch (error) {
+                    console.log('Error getting senders during cleanup:', error.message);
+                }
+
+                peer.peer.close();
+                console.log('Peer connection closed on unmount');
             }
         };
     }, [MyStream]);
@@ -72,6 +99,9 @@ const Room = () => {
 
     const handleCallUser = useCallback(async () => {
         try {
+            // Reset peer connection to ensure fresh start
+            peer.reset();
+
             const stream = await initCamera();
             setIsCallActive(true);
 
@@ -97,6 +127,9 @@ const Room = () => {
         setIsCallActive(true);
 
         try {
+            // Reset peer connection to ensure fresh start
+            peer.reset();
+
             const stream = await initCamera();
             const answer = await peer.getAnswer(offer);
             socket.emit('call:accepted', { answer, to: from });
@@ -120,20 +153,37 @@ const Room = () => {
             return;
         }
 
+        // Check if peer connection is valid and not closed
+        if (!peer.peer || peer.peer.signalingState === 'closed') {
+            console.error('Peer connection is closed, cannot send stream');
+            return;
+        }
+
         const senders = peer.peer.getSenders();
         const existingTracks = senders.map(sender => sender.track);
 
-        senders.forEach(sender => {
-            if (sender.track && !MyStream.getTracks().includes(sender.track)) {
-                peer.peer.removeTrack(sender);
-                console.log('Removed sender track:', sender.track.kind);
-            }
-        });
+        // Only remove tracks if connection is still open
+        if (peer.peer.signalingState !== 'closed') {
+            senders.forEach(sender => {
+                if (sender.track && !MyStream.getTracks().includes(sender.track)) {
+                    try {
+                        peer.peer.removeTrack(sender);
+                        console.log('Removed sender track:', sender.track.kind);
+                    } catch (error) {
+                        console.error('Error removing track:', error);
+                    }
+                }
+            });
+        }
 
         for (const track of MyStream.getTracks()) {
             if (!existingTracks.includes(track)) {
-                peer.peer.addTrack(track, MyStream);
-                console.log('Track added:', track.kind);
+                try {
+                    peer.peer.addTrack(track, MyStream);
+                    console.log('Track added:', track.kind);
+                } catch (error) {
+                    console.error('Error adding track:', error);
+                }
             }
         }
         console.log('Stream sent successfully');
@@ -243,12 +293,43 @@ const Room = () => {
     }, [MyStream]);
 
     const endCall = useCallback(() => {
+        // Stop all local stream tracks
         if (MyStream) {
-            MyStream.getTracks().forEach(track => track.stop());
+            MyStream.getTracks().forEach(track => {
+                track.stop();
+                console.log('Stopped track:', track.kind);
+            });
             setMyStream(null);
         }
+
+        // Clear remote stream
+        if (remoteStream) {
+            setRemoteStream(null);
+        }
+
+        // Close peer connection properly
+        if (peer.peer && peer.peer.signalingState !== 'closed') {
+            // Remove all senders before closing
+            const senders = peer.peer.getSenders();
+            senders.forEach(sender => {
+                try {
+                    peer.peer.removeTrack(sender);
+                } catch (error) {
+                    console.error('Error removing sender during cleanup:', error);
+                }
+            });
+
+            peer.peer.close();
+            console.log('Peer connection closed');
+        }
+
+        // Reset call state
+        setIsCallActive(false);
+        setRemoteSocketId(null);
+
+        // Navigate back to lobby
         navigate('/');
-    }, [MyStream, navigate]);
+    }, [MyStream, remoteStream, navigate]);
 
     return (
         <div className="room-container">
