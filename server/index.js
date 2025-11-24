@@ -16,46 +16,34 @@ const io = new Server(server, {
     }
 });
 
-
-
 const emailToSocketMap = new Map();
 const socketToEmailMap = new Map();
-
-
-
 
 app.get('/', (req, res) => {
     res.send('Express server is running');
 });
 
 io.on('connection', socket => {
-
     console.log('New client connected:', socket.id);
+
     socket.on('room:join', data => {
         const { email, rooms } = data;
         emailToSocketMap.set(email, socket.id);
         socketToEmailMap.set(socket.id, email);
         socket.join(rooms);
-        // Only emit to the socket that requested to join
         socket.emit('room:join', data);
-        // Notify others in the room that a new user joined
         socket.to(rooms).emit('user:joined', { email, id: socket.id });
-
     });
 
     socket.on('user:call', data => {
         const { offer, to } = data;
         io.to(to).emit('incoming:call', { offer, from: socket.id });
-
-
-
     });
 
     socket.on('call:accepted', data => {
         const { answer, to } = data;
         io.to(to).emit('call:accepted', { answer, from: socket.id });
     });
-
 
     socket.on('peer:nego:needed', data => {
         const { offer, to } = data;
@@ -70,12 +58,6 @@ io.on('connection', socket => {
     socket.on('peer:ice-candidate', data => {
         const { candidate, to } = data;
         io.to(to).emit('peer:ice-candidate', { candidate, from: socket.id });
-    });
-
-
-    socket.on('message', msg => {
-        console.log('Received message:', msg);
-        io.emit('message', msg);
     });
 
     socket.on('disconnect', () => {

@@ -17,9 +17,7 @@ const Room = () => {
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [isCallActive, setIsCallActive] = useState(false);
 
-    // ✅ Initialize camera only when needed (not automatically on mount)
     const initCamera = useCallback(async () => {
-        // Don't initialize if already have stream
         if (MyStream) {
             return MyStream;
         }
@@ -45,12 +43,11 @@ const Room = () => {
         }
     }, [MyStream]);
 
-    // Cleanup: Stop all tracks when component unmounts
     useEffect(() => {
         return () => {
             if (MyStream) {
                 MyStream.getTracks().forEach(track => track.stop());
-                setMyStream(null); // Ensure state reset on cleanup
+                setMyStream(null);
                 console.log('Camera stopped and stream cleared');
             }
         };
@@ -73,15 +70,10 @@ const Room = () => {
         setRemoteSocketId(id);
     }, []);
 
-    // ✅ Initiate a call to the remote user
     const handleCallUser = useCallback(async () => {
         try {
-            // Initialize camera first
             await initCamera();
             setIsCallActive(true);
-
-            // Ensure fresh peer connection
-            // peer.reset(); // REMOVED to prevent closing signaling state prematurely
 
             const offer = await peer.getOffer();
             socket.emit('user:call', { offer, to: remoteSocketId });
@@ -91,19 +83,13 @@ const Room = () => {
         }
     }, [remoteSocketId, socket, initCamera]);
 
-    // ✅ Initialize camera when receiving a call
     const handleIncomingCall = useCallback(async (data) => {
         const { from, offer } = data;
         setRemoteSocketId(from);
         setIsCallActive(true);
 
         try {
-            // Initialize camera first
             await initCamera();
-
-            // Ensure peer connection is fresh
-            // peer.reset(); // REMOVED to prevent closing signaling state prematurely
-
             const answer = await peer.getAnswer(offer);
             socket.emit('call:accepted', { answer, to: from });
         } catch (error) {
@@ -118,34 +104,27 @@ const Room = () => {
             return;
         }
 
-        // Check if tracks are already added to avoid "sender already exists" error
         const senders = peer.peer.getSenders();
         const existingTracks = senders.map(sender => sender.track);
 
-        // Remove senders for any tracks no longer present
         senders.forEach(sender => {
             if (sender.track && !MyStream.getTracks().includes(sender.track)) {
                 peer.peer.removeTrack(sender);
-                if (sender.track) {
-                    console.log('Removed sender track:', sender.track.kind);
-                }
+                console.log('Removed sender track:', sender.track.kind);
             }
         });
 
         for (const track of MyStream.getTracks()) {
-            // Only add track if it's not already added
             if (!existingTracks.includes(track)) {
                 peer.peer.addTrack(track, MyStream);
                 console.log('Track added:', track.kind);
-            } else {
-                console.log('Track already added:', track.kind);
             }
         }
         console.log('Stream sent successfully');
     }, [MyStream]);
 
     const handleCallAccepted = useCallback(async (data) => {
-        const { from, answer } = data;
+        const { answer } = data;
         await peer.setRemoteDescription(answer);
         console.log('Call accepted!');
         sendStream();
@@ -168,11 +147,10 @@ const Room = () => {
         socket.emit('peer:nego:done', { answer, to: from });
     }, [socket]);
 
-    const handleNegotiationFinal = useCallback(async ({ from, answer }) => {
-        await peer.peer.setLocalDescription(answer);
+    const handleNegotiationFinal = useCallback(async ({ answer }) => {
+        await peer.setRemoteDescription(answer);
     }, []);
 
-    // Handle ICE candidates
     const handleIceCandidate = useCallback(async ({ candidate }) => {
         try {
             await peer.peer.addIceCandidate(candidate);
@@ -185,20 +163,10 @@ const Room = () => {
     useEffect(() => {
         const handleTrackEvent = (ev) => {
             console.log('Track received:', ev.track);
-            console.log('Streams received:', ev.streams);
             const remStream = ev.streams[0];
             if (remStream) {
-                console.log('Setting remote stream from event');
+                console.log('Setting remote stream');
                 setRemoteStream(remStream);
-            } else {
-                console.log('No stream in event, creating new MediaStream');
-                setRemoteStream(prev => {
-                    if (prev) {
-                        prev.addTrack(ev.track);
-                        return prev;
-                    }
-                    return new MediaStream([ev.track]);
-                });
             }
         };
 
@@ -208,6 +176,17 @@ const Room = () => {
             peer.peer.removeEventListener('track', handleTrackEvent);
         };
     }, []);
+
+    useEffect(() => {
+        peer.peer.onicecandidate = (event) => {
+            if (event.candidate && remoteSocketId) {
+                socket.emit('peer:ice-candidate', {
+                    candidate: event.candidate,
+                    to: remoteSocketId
+                });
+            }
+        };
+    }, [remoteSocketId, socket]);
 
     useEffect(() => {
         socket.on('user:joined', handlerUserjoined);
@@ -227,7 +206,6 @@ const Room = () => {
         };
     }, [socket, handlerUserjoined, handleIncomingCall, handleCallAccepted, handleNegotiationIncoming, handleNegotiationFinal, handleIceCandidate]);
 
-    // 🎤 Toggle Mute/Unmute
     const toggleMute = useCallback(() => {
         if (MyStream) {
             const audioTrack = MyStream.getAudioTracks()[0];
@@ -238,7 +216,6 @@ const Room = () => {
         }
     }, [MyStream]);
 
-    // 📹 Toggle Video On/Off
     const toggleVideo = useCallback(() => {
         if (MyStream) {
             const videoTrack = MyStream.getVideoTracks()[0];
@@ -249,24 +226,16 @@ const Room = () => {
         }
     }, [MyStream]);
 
-    // 📞 End Call
     const endCall = useCallback(() => {
-        // Stop all tracks
         if (MyStream) {
             MyStream.getTracks().forEach(track => track.stop());
             setMyStream(null);
         }
-
-        // Reset peer connection for next call
-        // peer.reset(); // REMOVED to prevent closing signaling state prematurely
-
-        // Navigate back to lobby
         navigate('/');
     }, [MyStream, navigate]);
 
     return (
         <div className="room-container">
-            {/* Header */}
             <div className="room-header">
                 <div className="room-info">
                     <h2>Room: {roomId}</h2>
@@ -277,9 +246,7 @@ const Room = () => {
                 </div>
             </div>
 
-            {/* Video Grid */}
             <div className="video-grid">
-                {/* Remote Video (Large) */}
                 {remoteStream ? (
                     <div className="video-container remote-video">
                         <video
@@ -301,7 +268,6 @@ const Room = () => {
                     </div>
                 )}
 
-                {/* My Video (Small - Picture in Picture) */}
                 {MyStream && (
                     <div className="video-container my-video-pip">
                         <video
@@ -316,9 +282,7 @@ const Room = () => {
                 )}
             </div>
 
-            {/* Controls */}
             <div className="controls-container">
-                {/* Turn On Camera Button (Always visible if no stream) */}
                 {!MyStream && (
                     <button className="control-btn" onClick={initCamera}>
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -339,7 +303,6 @@ const Room = () => {
 
                 {MyStream && (
                     <>
-                        {/* Mute/Unmute Button */}
                         <button
                             className={`control-btn ${isMuted ? 'muted' : ''}`}
                             onClick={toggleMute}
@@ -356,7 +319,6 @@ const Room = () => {
                             )}
                         </button>
 
-                        {/* Video On/Off Button */}
                         <button
                             className={`control-btn ${isVideoOff ? 'video-off' : ''}`}
                             onClick={toggleVideo}
@@ -373,7 +335,6 @@ const Room = () => {
                             )}
                         </button>
 
-                        {/* End Call Button */}
                         <button
                             className="control-btn end-call-btn"
                             onClick={endCall}
@@ -384,7 +345,6 @@ const Room = () => {
                             </svg>
                         </button>
 
-                        {/* Send Stream Button (if needed) */}
                         {!remoteStream && (
                             <button className="control-btn send-stream-btn" onClick={sendStream}>
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
