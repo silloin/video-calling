@@ -72,11 +72,19 @@ const Room = () => {
 
     const handleCallUser = useCallback(async () => {
         try {
-            await initCamera();
+            const stream = await initCamera();
             setIsCallActive(true);
 
             const offer = await peer.getOffer();
             socket.emit('user:call', { offer, to: remoteSocketId });
+
+            // Send stream immediately after creating offer
+            if (stream) {
+                for (const track of stream.getTracks()) {
+                    peer.peer.addTrack(track, stream);
+                    console.log('Track added during call initiation:', track.kind);
+                }
+            }
         } catch (error) {
             console.error('Error initiating call:', error);
             alert('Error initiating call: ' + error.message);
@@ -89,9 +97,17 @@ const Room = () => {
         setIsCallActive(true);
 
         try {
-            await initCamera();
+            const stream = await initCamera();
             const answer = await peer.getAnswer(offer);
             socket.emit('call:accepted', { answer, to: from });
+
+            // Send stream immediately after accepting call
+            if (stream) {
+                for (const track of stream.getTracks()) {
+                    peer.peer.addTrack(track, stream);
+                    console.log('Track added during call acceptance:', track.kind);
+                }
+            }
         } catch (error) {
             console.error('Error answering call:', error);
             alert('Error accepting call: ' + error.message);
