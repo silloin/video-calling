@@ -208,10 +208,8 @@ const Room = () => {
             setMyStream(null);
         }
 
-        // Close peer connection
-        if (peer.peer) {
-            peer.peer.close();
-        }
+        // Reset peer connection for next call
+        peer.reset();
 
         // Navigate back to lobby
         navigate('/');
