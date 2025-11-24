@@ -33,15 +33,21 @@ class Peer {
 
     async getAnswer(offer) {
         this.ensurePeerConnection();
+        console.log('Peer state before setRemoteDescription (answer):', this.peer.signalingState);
         await this.peer.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await this.peer.createAnswer();
         await this.peer.setLocalDescription(new RTCSessionDescription(answer));
         return answer;
     }
 
-    async setLocalDescription(answer) {
+    async setRemoteDescription(answer) {
         this.ensurePeerConnection();
-        await this.peer.setRemoteDescription(new RTCSessionDescription(answer));
+        console.log('Peer state before setRemoteDescription (remote):', this.peer.signalingState);
+        if (this.peer.signalingState !== 'closed') {
+            await this.peer.setRemoteDescription(new RTCSessionDescription(answer));
+        } else {
+            console.warn('Attempted to set remote description on closed connection');
+        }
     }
 
     async getOffer() {
