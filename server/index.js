@@ -67,6 +67,11 @@ io.on('connection', socket => {
         io.to(to).emit('peer:nego:final', { answer, from: socket.id });
     });
 
+    socket.on('peer:ice-candidate', data => {
+        const { candidate, to } = data;
+        io.to(to).emit('peer:ice-candidate', { candidate, from: socket.id });
+    });
+
 
     socket.on('message', msg => {
         console.log('Received message:', msg);

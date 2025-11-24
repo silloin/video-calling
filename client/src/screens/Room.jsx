@@ -126,7 +126,9 @@ const Room = () => {
         senders.forEach(sender => {
             if (sender.track && !MyStream.getTracks().includes(sender.track)) {
                 peer.peer.removeTrack(sender);
-                console.log('Removed sender track:', sender.track.kind);
+                if (sender.track) {
+                    console.log('Removed sender track:', sender.track.kind);
+                }
             }
         });
 
@@ -167,7 +169,7 @@ const Room = () => {
     }, [socket]);
 
     const handleNegotiationFinal = useCallback(async ({ from, answer }) => {
-        await peer.setLocalDescription(answer);
+        await peer.peer.setLocalDescription(answer);
     }, []);
 
     // Handle ICE candidates
@@ -181,22 +183,31 @@ const Room = () => {
     }, []);
 
     useEffect(() => {
-        peer.peer.addEventListener('track', async (ev) => {
-            console.log('Track added:', ev.track);
+        const handleTrackEvent = (ev) => {
+            console.log('Track received:', ev.track);
+            console.log('Streams received:', ev.streams);
             const remStream = ev.streams[0];
-            setRemoteStream(remStream);
-        });
-
-        // Handle ICE candidates
-        peer.peer.onicecandidate = (event) => {
-            if (event.candidate) {
-                socket.emit('peer:ice-candidate', {
-                    candidate: event.candidate,
-                    to: remoteSocketId
+            if (remStream) {
+                console.log('Setting remote stream from event');
+                setRemoteStream(remStream);
+            } else {
+                console.log('No stream in event, creating new MediaStream');
+                setRemoteStream(prev => {
+                    if (prev) {
+                        prev.addTrack(ev.track);
+                        return prev;
+                    }
+                    return new MediaStream([ev.track]);
                 });
             }
         };
-    }, [remoteSocketId, socket]);
+
+        peer.peer.addEventListener('track', handleTrackEvent);
+
+        return () => {
+            peer.peer.removeEventListener('track', handleTrackEvent);
+        };
+    }, []);
 
     useEffect(() => {
         socket.on('user:joined', handlerUserjoined);
