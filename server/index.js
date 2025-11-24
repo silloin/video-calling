@@ -7,8 +7,10 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        // Use environment variable in production, allow localhost in development
-        origin: process.env.CLIENT_URL || "http://localhost:3000",
+        origin: [
+            "http://localhost:3000",
+            "https://video-calling-frontend-cky8.onrender.com"
+        ],
         methods: ["GET", "POST"],
         credentials: true
     }
