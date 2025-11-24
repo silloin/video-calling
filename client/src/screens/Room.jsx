@@ -111,8 +111,18 @@ const Room = () => {
             return;
         }
 
+        // Check if tracks are already added to avoid "sender already exists" error
+        const senders = peer.peer.getSenders();
+        const existingTracks = senders.map(sender => sender.track);
+
         for (const track of MyStream.getTracks()) {
-            peer.peer.addTrack(track, MyStream);
+            // Only add track if it's not already added
+            if (!existingTracks.includes(track)) {
+                peer.peer.addTrack(track, MyStream);
+                console.log('Track added:', track.kind);
+            } else {
+                console.log('Track already added:', track.kind);
+            }
         }
         console.log('Stream sent successfully');
     }, [MyStream]);
