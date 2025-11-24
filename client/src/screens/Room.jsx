@@ -170,13 +170,33 @@ const Room = () => {
         await peer.setLocalDescription(answer);
     }, []);
 
+    // Handle ICE candidates
+    const handleIceCandidate = useCallback(async ({ candidate }) => {
+        try {
+            await peer.peer.addIceCandidate(candidate);
+            console.log('Added remote ICE candidate');
+        } catch (e) {
+            console.error('Error adding received ice candidate', e);
+        }
+    }, []);
+
     useEffect(() => {
         peer.peer.addEventListener('track', async (ev) => {
             console.log('Track added:', ev.track);
             const remStream = ev.streams[0];
             setRemoteStream(remStream);
         });
-    }, []);
+
+        // Handle ICE candidates
+        peer.peer.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.emit('peer:ice-candidate', {
+                    candidate: event.candidate,
+                    to: remoteSocketId
+                });
+            }
+        };
+    }, [remoteSocketId, socket]);
 
     useEffect(() => {
         socket.on('user:joined', handlerUserjoined);
@@ -184,14 +204,17 @@ const Room = () => {
         socket.on('call:accepted', handleCallAccepted);
         socket.on('peer:nego:needed', handleNegotiationIncoming);
         socket.on('peer:nego:final', handleNegotiationFinal);
+        socket.on('peer:ice-candidate', handleIceCandidate);
+
         return () => {
             socket.off('user:joined', handlerUserjoined);
             socket.off('incoming:call', handleIncomingCall);
             socket.off('call:accepted', handleCallAccepted);
             socket.off('peer:nego:needed', handleNegotiationIncoming);
             socket.off('peer:nego:final', handleNegotiationFinal);
+            socket.off('peer:ice-candidate', handleIceCandidate);
         };
-    }, [socket, handlerUserjoined, handleIncomingCall, handleCallAccepted, handleNegotiationIncoming, handleNegotiationFinal]);
+    }, [socket, handlerUserjoined, handleIncomingCall, handleCallAccepted, handleNegotiationIncoming, handleNegotiationFinal, handleIceCandidate]);
 
     // 🎤 Toggle Mute/Unmute
     const toggleMute = useCallback(() => {
