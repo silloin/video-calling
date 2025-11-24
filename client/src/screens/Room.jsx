@@ -124,7 +124,7 @@ const Room = () => {
 
         // Remove senders for any tracks no longer present
         senders.forEach(sender => {
-            if (!MyStream.getTracks().includes(sender.track)) {
+            if (sender.track && !MyStream.getTracks().includes(sender.track)) {
                 peer.peer.removeTrack(sender);
                 console.log('Removed sender track:', sender.track.kind);
             }
